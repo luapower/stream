@@ -55,7 +55,7 @@ function stream.buffered_reader(bufsize, read, ctype)
 		n = math.min(n, len)
 		i = i + n
 		len = len - n
-		return buf + i - n, n
+		return buf + i - n, n, len
 	end
 end
 
