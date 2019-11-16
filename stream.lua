@@ -12,7 +12,7 @@ local stream = {}
 local const_char_ptr_t = ffi.typeof'const char*'
 
 --allow a function's `buf, sz` args to be `s, [len]`.
-local function stringdata(buf, sz)
+function stream.stringdata(buf, sz)
 	if type(buf) == 'string' then
 		if sz then
 			assert(sz <= #buf, 'string too short')
@@ -159,6 +159,7 @@ function stream.buffered_reader(bufsize, read, ctype)
 		return buf + i - n, n, len
 	end
 end
+]]
 
 --make a `write(buf, sz)` that appends data to an expanding buffer.
 function stream.dynarray_writer(dynarray)
@@ -172,9 +173,8 @@ function stream.dynarray_writer(dynarray)
 	end, function()
 		local sz = i
 		i = 0
-		return ffi.string(dynarray(sz))
+		return dynarray(sz)
 	end
 end
-]]
 
 return stream
