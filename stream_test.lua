@@ -6,15 +6,14 @@ hello world
 wazaa
 ]]
 
-local crlf = s:find'\r\n' and true or false
+local term = s:match'\r?\n'
 
-local read = stream.mem_reader(s)
-local write, flush = stream.dynarray_writer()
-local readline = stream.line_reader(read, write, crlf)
+local read = stream.memreader(s)
+local read = stream.readtobuffer(read)
+local lb = stream.linebuffer(read, term, 8192)
 
 while true do
-	local ok, err = readline()
-	if not ok then break end
-	local s = ffi.string(flush())
+	local s, err = lb.readline()
+	if not s then break end
 	print(s)
 end

@@ -9,6 +9,140 @@ local glue = require'glue'
 
 local stream = {}
 
+local const_char_ptr_t = ffi.typeof'const char*'
+
+--allow a function's `buf, sz` args to be `s, [len]`.
+local function stringdata(buf, sz)
+	if type(buf) == 'string' then
+		if sz then
+			assert(sz <= #buf, 'string too short')
+		else
+			sz = #buf
+		end
+		return ffi.cast(const_char_ptr_t, buf), sz
+	else
+		return buf, sz
+	end
+end
+
+--make a `read(sz) -> buf, sz` that is reading from a string or cdata buffer.
+function stream.memreader(buf, len)
+	local buf, len = stringdata(buf, len)
+	local i = 0
+	return function(n)
+		assert(n > 0)
+		if i == len then
+			return nil, 'eof'
+		else
+			n = math.min(n, len - i)
+			i = i + n
+			return buf + i - n, n
+		end
+	end
+end
+
+--convert `read(maxsz) -> buf, sz` into `read(buf, maxsz) -> sz`.
+function stream.readtobuffer(read)
+	return function(ownbuf, maxsz)
+		local buf, sz = read(maxsz)
+		if not buf then return nil, sz end
+		ffi.copy(ownbuf, buf, sz)
+		return sz
+	end
+end
+
+--Based on `read(buf, maxsz) -> sz`, create the API:
+--  `readline() -> s`
+--  `read(maxsz) -> buf, sz`
+function stream.linebuffer(read, term, sz)
+
+	local find_term
+	if #term == 1 then
+		term = string.byte(term)
+		function find_term(buf, i, j)
+			for i = i, j-1 do
+				if buf[i] == term then
+					return true, i, i+1
+				end
+			end
+			return false, 0, 0
+		end
+	elseif #term == 2 then
+		local t1, t2 = string.byte(term, 1, 2)
+		function find_term(buf, i, j)
+			for i = i, j-1 do
+				if buf[i] == t1 and buf[i+1] == t2 then
+					return true, i, i+2
+				end
+			end
+			return false, 0, 0
+		end
+	else
+		assert(false)
+	end
+
+	--single-piece ring buffer
+
+	assert(sz >= 1024)
+	local buf = ffi.new('char[?]', sz)
+
+	local i, j = 0, 0
+
+	local function more()
+		if j + 128 >= sz then
+			if j == sz and i == 0 then
+				return nil, 'line too long'
+			else --move partial line to the beginning.
+				ffi.copy(buf, buf + i, j - i)
+				i, j = 0, j - i
+			end
+		end
+		local n, err = read(buf + j, sz - j)
+		if not n then return nil, err end
+		if n == 0 then return mode() end
+		j = j + n
+		return true
+	end
+
+	local function readline()
+		if j == i then
+			local ok, err = more()
+			if not ok then return nil, err end
+		end
+		local n = 0
+		while true do
+			local found, line_j, next_i = find_term(buf, i + n, j)
+			if found then
+				local s = ffi.string(buf + i, line_j - i)
+				i = next_i
+				return s
+			else
+				n = j - i
+				local ok, err = more()
+				if not ok then return nil, err end
+			end
+		end
+	end
+
+	local function read(maxn)
+		if j == i then
+			local ok, err = more()
+			if not ok then return nil, err end
+		end
+		local n = math.min(maxn, j - i)
+		local buf = buf + i
+		i = i + n
+		return buf, n
+	end
+
+	return {
+		readline = readline,
+		read = read,
+	}
+
+end
+
+--[[
 --convert `read(buf, sz) -> sz` into `read(sz) -> buf, sz` with read-ahead.
 function stream.buffered_reader(bufsize, read, ctype)
 	local buf, sz = glue.buffer()(bufsize)
@@ -41,140 +175,6 @@ function stream.dynarray_writer(dynarray)
 		return ffi.string(dynarray(sz))
 	end
 end
-
---convert `read(sz) -> buf, sz` to `read() -> n` which repeatedly calls
---`write(c, 1)` until EOL, excluding the EOL marker.
-function stream.line_reader(read, write, crlf)
-	return function()
-		while true do
-			local buf, sz = read(1)
-			if not buf then return nil, sz end
-			assert(sz == 1)
-			local c = buf[0]
-			if c == 0x0A and not crlf then
-				return true
-			elseif c == 0x0D and crlf then
-				local buf, sz = read(1)
-				if not buf then return nil, sz end
-				assert(sz == 1)
-				local c = buf[0]
-				if c == 0x0A then
-					return true
-				else
-					return nil, 'LF expected'
-				end
-			else
-				local sz, err = write(buf, 1)
-				if not sz then return nil, err end
-				assert(sz == 1)
-			end
-		end
-	end
-end
-
-local const_char_ptr_t = ffi.typeof'const char*'
-
---allow a function's `buf, sz` args to be `s, [len]`.
-local function stringdata(buf, sz)
-	if type(buf) == 'string' then
-		if sz then
-			assert(sz <= #buf, 'string too short')
-		else
-			sz = #buf
-		end
-		return ffi.cast(const_char_ptr_t, buf), sz
-	else
-		return buf, sz
-	end
-end
-
---make a `read(sz) -> buf, sz` that is reading from a string or cdata buffer.
-function stream.mem_reader(buf, len)
-	local buf, len = stringdata(buf, len)
-	local i = 0
-	return function(n)
-		assert(n > 0)
-		if i == len then
-			return nil, 'eof'
-		else
-			n = math.min(n, len - i)
-			i = i + n
-			return buf + i - n, n
-		end
-	end
-end
-
---[==[
-
---convert `read(sz) -> buf, sz` into `read(buf, sz) -> sz`.
-function stream.ownbuffer_reader(read)
-	return function(ownbuf, sz)
-		local buf, sz = read(sz)
-		if not buf then return nil, sz end
-		ffi.copy(ownbuf, buf, sz)
-		return sz
-	end
-end
-
---convert `write(buf, sz) -> sz` to accept `write(s) -> sz`.
-function stream.writestring(s, write)
-	return function(buf, sz)
-		return write(stringdata(buf, sz))
-	end
-end
-
---call `read(buf, sz) -> sz` repeatedly until sz elements are read.
-function stream.read_exactly(buf, sz, read)
-	local readsz, leftsz = 0, sz
-	while leftsz > 0 do
-		local sz, err = read(buf + readsz, leftsz)
-		if not sz then return nil, err, leftsz end
-		readsz = readsz + sz
-		leftsz = leftsz - sz
-	end
-end
---call `write(buf, sz) -> sz` repeatedly until sz elements are written.
-stream.write_exactly = stream.read_exactly
-
---turn `read(sz) -> buf, sz` into `read(sz) -> s`
-function stream.readstring(read)
-	local buf, sz = read(sz)
-	if not buf then return nil, sz end
-	return ffi.string(buf, sz)
-end
-
---given `seek('cur') -> i` and `seek('cur', n) -> i`, convert `read(buf, sz)`
---to accept `read(nil, sz)` which skips sz elements.
-function stream.make_skippable(read, seek, skipsz)
-	if seek then
-		return function(buf, sz)
-			if not buf then --skip bytes
-				local i0, err = seek()
-				if not i0 then return nil, err end
-				local i, err = seek('cur', sz)
-				if not i then return nil, err end
-				return i - i0
-			else
-				return read(buf, sz)
-			end
-		end
-	else
-		local skipbuf, skipsz = glue.buffer()(skipsz or 4096)
-		return function(buf, sz)
-			if not buf then
-				local leftsz = sz
-				while leftsz > 0 do
-					local sz = math.min(skipsz, leftsz)
-					local sz, err = stream.read_exactly(skipbuf, sz, read)
-					if not sz then return nil, err end
-					leftsz = leftsz - sz
-				end
-			else
-				return read(buf, sz)
-			end
-		end
-	end
-end
-]==]
+]]
 
 return stream
