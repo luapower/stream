@@ -177,4 +177,9 @@ function stream.dynarray_writer(dynarray)
 	end
 end
 
+function stream.writebuffer(write, dynarray)
+	local write, flush = stream.dynarray_writer(dynarray)
+
+end
+
 return stream
