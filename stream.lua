@@ -27,7 +27,7 @@ end
 
 --make a `read(sz) -> buf, sz` that is reading from a string or cdata buffer.
 function stream.memreader(buf, len)
-	local buf, len = stringdata(buf, len)
+	local buf, len = stream.stringdata(buf, len)
 	local i = 0
 	return function(n)
 		assert(n > 0)
@@ -91,6 +91,7 @@ function stream.linebuffer(read, term, sz)
 	local function more()
 		if j + 128 >= sz then
 			if j == sz and i == 0 then
+				print(debug.traceback())
 				return nil, 'line too long'
 			else --move partial line to the beginning.
 				ffi.copy(buf, buf + i, j - i)
