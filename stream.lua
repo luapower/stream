@@ -81,7 +81,7 @@ function stream.linebuffer(read, term, sz)
 		assert(false)
 	end
 
-	--single-piece ring buffer
+	--single-piece ring buffer (no wrap-around).
 
 	assert(sz >= 1024)
 	local buf = ffi.new('char[?]', sz)
