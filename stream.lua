@@ -166,17 +166,21 @@ end
 
 --make a `write(buf, sz)` that appends data to an expanding buffer.
 function stream.dynarray_writer(dynarray)
-	dynarray = dynarray or glue.dynarray()
+	local buffer = glue.buffer'char[?]'
 	local i = 0
 	return function(buf, sz)
-		local dbuf = dynarray(i + sz)
-		ffi.copy(dbuf + i, buf, sz)
+		local buf0 = buffer(i)
+		local buf1 = buffer(i + sz)
+		if buf1 ~= buf0 then
+			ffi.copy(buf1, buf0, i)
+		end
+		ffi.copy(buf1 + i, buf, sz)
 		i = i + sz
 		return sz
 	end, function()
 		local sz = i
 		i = 0
-		return dynarray(sz)
+		return buffer(sz), sz
 	end
 end
 
