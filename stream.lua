@@ -102,7 +102,6 @@ function stream.linebuffer(read, term, sz)
 		end
 		local n, err = read(buf + j, sz - j)
 		if not n then return nil, err end
-		if n == 0 then return nil, 'null read' end
 		j = j + n
 		return true
 	end
