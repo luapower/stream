@@ -25,6 +25,20 @@ function stream.stringdata(buf, sz)
 	end
 end
 
+--convert `write(buf, sz) -> sz_written` into `write(buf, sz) -> true | nil,err`
+function stream.repeatwriter(write)
+	return function(buf, sz)
+		local buf, sz = stream.stringdata(buf, sz)
+		while sz > 0 do
+			local len, err, errcode = write(buf, sz)
+			if not len then return nil, err, errcode end
+			buf = buf + len
+			sz  = sz  - len
+		end
+		return true
+	end
+end
+
 --make a `read(sz) -> buf, sz` that is reading from a string or cdata buffer.
 function stream.memreader(buf, len)
 	local buf, len = stream.stringdata(buf, len)
