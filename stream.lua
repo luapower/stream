@@ -9,7 +9,7 @@ local glue = require'glue'
 
 local stream = {}
 
-local const_char_ptr_t = ffi.typeof'const char*'
+local char_ptr_t = ffi.typeof'char*'
 
 --allow a function's `buf, sz` args to be `s, [len]`.
 function stream.stringdata(buf, sz)
@@ -19,7 +19,7 @@ function stream.stringdata(buf, sz)
 		else
 			sz = #buf
 		end
-		return ffi.cast(const_char_ptr_t, buf), sz
+		return ffi.cast(char_ptr_t, buf), sz
 	else
 		return buf, sz
 	end
