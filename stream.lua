@@ -21,6 +21,8 @@ function stream.stringdata(buf, sz)
 		end
 		return ffi.cast(char_ptr_t, buf), sz
 	else
+		assert(type(buf) == 'cdata', type(buf))
+		assert(type(sz) == 'number', type(sz))
 		return buf, sz
 	end
 end
