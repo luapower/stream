@@ -27,17 +27,21 @@ function stream.stringdata(buf, sz)
 	end
 end
 
+function stream.writeall(buf, sz, write, ...)
+	local buf, sz = stream.stringdata(buf, sz)
+	while sz > 0 do
+		local len, err, errcode = write(buf, sz, ...)
+		if not len then return nil, err, errcode end
+		buf = buf + len
+		sz  = sz  - len
+	end
+	return true
+end
+
 --convert `write(buf, sz) -> sz_written` into `write(buf, sz) -> true | nil,err`
-function stream.repeatwriter(write)
+function stream.repeatwriter(write, ...)
 	return function(buf, sz)
-		local buf, sz = stream.stringdata(buf, sz)
-		while sz > 0 do
-			local len, err, errcode = write(buf, sz)
-			if not len then return nil, err, errcode end
-			buf = buf + len
-			sz  = sz  - len
-		end
-		return true
+		return stream.writeall(buf, sz, write, ...)
 	end
 end
 
